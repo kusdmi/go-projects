@@ -28,3 +28,6 @@ vendor/
 *.log
 *.tmp
 tmp/
+bin/
+gateway/gateway
+ledger/ledger
