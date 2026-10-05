@@ -1,0 +1,4 @@
+[
+  {"category": "food", "limit": 5000, "period": "month"},
+  {"category": "entertainment", "limit": 2000, "period": "month"}
+]
