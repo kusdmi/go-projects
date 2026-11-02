@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 )
@@ -13,14 +12,21 @@ type Budget struct {
 	Period   string  `json:"period,omitempty"`
 }
 
+func (b Budget) Validate() error {
+	if b.Category == "" {
+		return fmt.Errorf("budget category cannot be empty")
+	}
+	if b.Limit <= 0 {
+		return fmt.Errorf("budget limit must be positive, got %.2f", b.Limit)
+	}
+	return nil
+}
+
 var budgets = map[string]Budget{}
 
 func SetBudget(b Budget) error {
-	if b.Category == "" {
-		return errors.New("category cannot be empty")
-	}
-	if b.Limit <= 0 {
-		return errors.New("limit must be positive")
+	if err := b.Validate(); err != nil {
+		return err
 	}
 	budgets[b.Category] = b
 	return nil

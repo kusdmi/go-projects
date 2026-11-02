@@ -1,9 +1,6 @@
 package main
 
-import (
-	"errors"
-	"fmt"
-)
+import "fmt"
 
 var transactions []Transaction
 
@@ -22,13 +19,12 @@ func categoryTotal(category string) float64 {
 }
 
 func AddTransaction(tx Transaction) error {
-	if tx.Amount == 0 {
-		return errors.New("amount cannot be zero")
-	}
-	if tx.Amount < 0 {
-		return errors.New("amount cannot be negative")
+	// Валидация вынесена в метод Validate()
+	if err := tx.Validate(); err != nil {
+		return err
 	}
 
+	// Проверка бюджета — бизнес-логика Ledger
 	if b, ok := GetBudget(tx.Category); ok {
 		newTotal := categoryTotal(tx.Category) + tx.Amount
 		if newTotal > b.Limit {
