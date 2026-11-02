@@ -162,3 +162,50 @@ type Budget struct {
     }
 
 В `main` она вызывается с объектами `Transaction` и `Budget`, корректными и некорректными — что видно в выводе программы.
+
+## API Gateway
+
+Gateway предоставляет HTTP API для работы с Ledger.
+
+| Метод | Путь                | Описание                    |
+| ----- | ------------------- | --------------------------- |
+| POST  | `/api/transactions` | Создать транзакцию          |
+| GET   | `/api/transactions` | Получить список транзакций  |
+| POST  | `/api/budgets`      | Создать или обновить бюджет |
+| GET   | `/api/budgets`      | Получить список бюджетов    |
+
+### Примеры `curl`
+
+**Создать бюджет:**
+
+```bash
+curl -i -X POST http://localhost:8080/api/budgets \
+-H "Content-Type: application/json" \
+-d '{"category":"food","limit":5000}'
+```
+
+**Создать транзакцию:**
+
+```bash
+curl -i -X POST http://localhost:8080/api/transactions \
+-H "Content-Type: application/json" \
+-d '{"amount":450,"category":"food","description":"lunch","date":"2025-09-10"}'
+```
+
+**Получить список транзакций:**
+
+```bash
+curl -i http://localhost:8080/api/transactions
+```
+
+При превышении бюджета возвращается `409 Conflict`:
+
+```json
+{ "error": "budget exceeded" }
+```
+
+При ошибке валидации возвращается `400 Bad Request`:
+
+```json
+{ "error": "transaction amount must be positive" }
+```

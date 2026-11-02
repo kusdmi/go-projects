@@ -1,4 +1,4 @@
-package main
+package ledger
 
 import (
 	"encoding/json"
@@ -51,4 +51,12 @@ func LoadBudgets(r io.Reader) error {
 	}
 
 	return nil
+}
+
+func ListBudgets() []Budget {
+	result := make([]Budget, 0, len(budgets))
+	for _, b := range budgets {
+		result = append(result, b)
+	}
+	return result
 }
