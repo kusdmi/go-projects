@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,7 +8,6 @@ import (
 	"os"
 	"time"
 
-	"example.com/finance/ledger"
 	"example.com/finance/ledger/internal/cache"
 	"example.com/finance/ledger/internal/db"
 )
