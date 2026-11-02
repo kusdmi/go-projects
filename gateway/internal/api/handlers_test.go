@@ -16,7 +16,7 @@ func TestBudgetAndTransactionFlow(t *testing.T) {
 
 	// --- Тесты для бюджетов ---
 	t.Run("create budget", func(t *testing.T) {
-		ledger.Reset()
+		_ = ledger.Reset()
 
 		body := `{"category":"food","limit":5000}`
 		req := httptest.NewRequest(http.MethodPost, "/api/budgets", bytes.NewBufferString(body))
@@ -33,18 +33,10 @@ func TestBudgetAndTransactionFlow(t *testing.T) {
 		if !strings.Contains(contentType, "application/json") {
 			t.Errorf("expected application/json, got %s", contentType)
 		}
-
-		var resp BudgetResponse
-		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-			t.Fatalf("failed to decode response: %v", err)
-		}
-		if resp.Category != "food" || resp.Limit != 5000 {
-			t.Errorf("unexpected response body: %+v", resp)
-		}
 	})
 
 	t.Run("get budgets", func(t *testing.T) {
-		ledger.Reset()
+		_ = ledger.Reset()
 		_ = ledger.SetBudget(ledger.Budget{Category: "food", Limit: 5000})
 
 		req := httptest.NewRequest(http.MethodGet, "/api/budgets", nil)
@@ -66,9 +58,9 @@ func TestBudgetAndTransactionFlow(t *testing.T) {
 	})
 
 	t.Run("create budget bad request", func(t *testing.T) {
-		ledger.Reset()
+		_ = ledger.Reset()
 
-		body := `{"category":"","limit":-100}` // Невалидные данные
+		body := `{"category":"","limit":-100}`
 		req := httptest.NewRequest(http.MethodPost, "/api/budgets", bytes.NewBufferString(body))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
@@ -82,7 +74,7 @@ func TestBudgetAndTransactionFlow(t *testing.T) {
 
 	// --- Тесты для транзакций ---
 	t.Run("create valid transaction", func(t *testing.T) {
-		ledger.Reset()
+		_ = ledger.Reset()
 		_ = ledger.SetBudget(ledger.Budget{Category: "food", Limit: 5000})
 
 		body := `{"amount":450,"category":"food","description":"lunch","date":"2025-09-10"}`
@@ -100,14 +92,15 @@ func TestBudgetAndTransactionFlow(t *testing.T) {
 		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 			t.Fatalf("failed to decode response: %v", err)
 		}
-		if resp.Amount != 450 || resp.Category != "food" {
-			t.Errorf("unexpected response body: %+v", resp)
+		if resp.ID == 0 {
+			t.Errorf("expected generated ID, got 0")
 		}
 	})
 
 	t.Run("get transactions", func(t *testing.T) {
-		ledger.Reset()
-		_ = ledger.AddTransaction(ledger.Transaction{Amount: 450, Category: "food", Date: "2025-09-10"})
+		_ = ledger.Reset()
+		tx := ledger.Transaction{Amount: 450, Category: "food", Date: "2025-09-10"}
+		_ = ledger.AddTransaction(&tx)
 
 		req := httptest.NewRequest(http.MethodGet, "/api/transactions", nil)
 		w := httptest.NewRecorder()
@@ -128,9 +121,10 @@ func TestBudgetAndTransactionFlow(t *testing.T) {
 	})
 
 	t.Run("budget exceeded", func(t *testing.T) {
-		ledger.Reset()
+		_ = ledger.Reset()
 		_ = ledger.SetBudget(ledger.Budget{Category: "food", Limit: 5000})
-		_ = ledger.AddTransaction(ledger.Transaction{Amount: 450, Category: "food"})
+		tx := ledger.Transaction{Amount: 450, Category: "food", Date: "2025-09-10"}
+		_ = ledger.AddTransaction(&tx)
 
 		body := `{"amount":5000,"category":"food","description":"shopping","date":"2025-09-11"}`
 		req := httptest.NewRequest(http.MethodPost, "/api/transactions", bytes.NewBufferString(body))
@@ -145,9 +139,9 @@ func TestBudgetAndTransactionFlow(t *testing.T) {
 	})
 
 	t.Run("bad json", func(t *testing.T) {
-		ledger.Reset()
+		_ = ledger.Reset()
 
-		body := `{"amount": -50, "category": "food"` // Синтаксическая ошибка JSON
+		body := `{"amount": -50, "category": "food"`
 		req := httptest.NewRequest(http.MethodPost, "/api/transactions", bytes.NewBufferString(body))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()

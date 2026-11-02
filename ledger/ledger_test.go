@@ -1,9 +1,18 @@
 package ledger
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
+
+func TestMain(m *testing.M) {
+	// Инициализируем БД для тестов
+	if err := Init(); err != nil {
+		panic("Failed to init DB for tests: " + err.Error())
+	}
+	os.Exit(m.Run())
+}
 
 func TestTransactionValidate(t *testing.T) {
 	t.Parallel()
@@ -20,7 +29,7 @@ func TestTransactionValidate(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt // capture range variable
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			err := tt.tx.Validate()
@@ -58,28 +67,24 @@ func TestBudgetValidate(t *testing.T) {
 }
 
 func TestAddTransactionWithBudget(t *testing.T) {
-	Reset() // Изолируем состояние
+	_ = Reset() // Очищаем БД
 
-	// 1. Устанавливаем бюджет
-	err := SetBudget(Budget{Category: "food", Limit: 5000})
-	if err != nil {
+	if err := SetBudget(Budget{Category: "food", Limit: 5000}); err != nil {
 		t.Fatalf("failed to set budget: %v", err)
 	}
 
-	// 2. Добавляем транзакцию в пределах лимита
 	tx1 := Transaction{Amount: 1500, Category: "food", Date: "2025-09-10"}
-	if err := AddTransaction(tx1); err != nil {
+	if err := AddTransaction(&tx1); err != nil { // Передаем указатель
 		t.Errorf("expected success, got error: %v", err)
 	}
 
-	// Проверяем, что добавилась
-	if len(ListTransactions()) != 1 {
-		t.Errorf("expected 1 transaction, got %d", len(ListTransactions()))
+	txs, _ := ListTransactions() // Возвращает 2 значения
+	if len(txs) != 1 {
+		t.Errorf("expected 1 transaction, got %d", len(txs))
 	}
 
-	// 3. Пытаемся превысить лимит
 	tx2 := Transaction{Amount: 4000, Category: "food", Date: "2025-09-11"}
-	err = AddTransaction(tx2)
+	err := AddTransaction(&tx2) // Передаем указатель
 	if err == nil {
 		t.Fatal("expected budget exceeded error, got nil")
 	}
@@ -87,8 +92,8 @@ func TestAddTransactionWithBudget(t *testing.T) {
 		t.Errorf("expected 'budget exceeded' error, got: %v", err)
 	}
 
-	// Проверяем, что вторая транзакция НЕ добавилась
-	if len(ListTransactions()) != 1 {
-		t.Errorf("expected 1 transaction after rejection, got %d", len(ListTransactions()))
+	txs, _ = ListTransactions()
+	if len(txs) != 1 {
+		t.Errorf("expected 1 transaction after rejection, got %d", len(txs))
 	}
 }

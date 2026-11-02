@@ -9,6 +9,7 @@ func NewRouter() http.Handler {
 	mux.HandleFunc("GET /api/transactions", ListTransactionsHandler)
 	mux.HandleFunc("POST /api/budgets", CreateBudgetHandler)
 	mux.HandleFunc("GET /api/budgets", ListBudgetsHandler)
+	mux.HandleFunc("GET /api/reports/summary", GetReportSummaryHandler)
 
 	return LoggingMiddleware(mux)
 }

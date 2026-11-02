@@ -1,9 +1,11 @@
 package ledger
 
 import (
-	"encoding/json"
+	"database/sql"
+	"errors"
 	"fmt"
-	"io"
+
+	"example.com/finance/ledger/internal/db"
 )
 
 type Budget struct {
@@ -14,7 +16,7 @@ type Budget struct {
 
 func (b Budget) Validate() error {
 	if b.Category == "" {
-		return fmt.Errorf("budget category cannot be empty")
+		return errors.New("budget category cannot be empty")
 	}
 	if b.Limit <= 0 {
 		return fmt.Errorf("budget limit must be positive, got %.2f", b.Limit)
@@ -22,41 +24,46 @@ func (b Budget) Validate() error {
 	return nil
 }
 
-var budgets = map[string]Budget{}
+var ErrBudgetNotFound = errors.New("budget not found")
 
 func SetBudget(b Budget) error {
 	if err := b.Validate(); err != nil {
 		return err
 	}
-	budgets[b.Category] = b
-	return nil
+	query := `
+		INSERT INTO budgets (category, limit_amount)
+		VALUES ($1, $2)
+		ON CONFLICT (category) DO UPDATE
+		SET limit_amount = EXCLUDED.limit_amount
+	`
+	_, err := db.DB.Exec(query, b.Category, b.Limit)
+	return err
 }
 
-func GetBudget(category string) (Budget, bool) {
-	b, ok := budgets[category]
-	return b, ok
-}
-
-func LoadBudgets(r io.Reader) error {
-	var items []Budget
-	dec := json.NewDecoder(r)
-	if err := dec.Decode(&items); err != nil {
-		return fmt.Errorf("parse budgets JSON: %w", err)
+func GetBudget(category string) (Budget, error) {
+	var b Budget
+	query := `SELECT category, limit_amount FROM budgets WHERE category = $1`
+	err := db.DB.QueryRow(query, category).Scan(&b.Category, &b.Limit)
+	if err == sql.ErrNoRows {
+		return Budget{}, ErrBudgetNotFound
 	}
+	return b, err
+}
 
-	for _, b := range items {
-		if err := SetBudget(b); err != nil {
-			return fmt.Errorf("set budget %q: %w", b.Category, err)
+func ListBudgets() ([]Budget, error) {
+	rows, err := db.DB.Query(`SELECT category, limit_amount FROM budgets ORDER BY category`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var budgets []Budget
+	for rows.Next() {
+		var b Budget
+		if err := rows.Scan(&b.Category, &b.Limit); err != nil {
+			return nil, err
 		}
+		budgets = append(budgets, b)
 	}
-
-	return nil
-}
-
-func ListBudgets() []Budget {
-	result := make([]Budget, 0, len(budgets))
-	for _, b := range budgets {
-		result = append(result, b)
-	}
-	return result
+	return budgets, rows.Err()
 }

@@ -2,233 +2,31 @@
 
 Учебный репозиторий с двумя сервисами на Go:
 
-- **gateway** — простой HTTP-шлюз на порту `8080`.
-- **ledger** — бизнес-логика: учёт финансовых транзакций с проверкой бюджетов по категориям.
+- **gateway** — HTTP-шлюз, принимает запросы от клиентов.
+- **ledger** — бизнес-логика: хранит данные в PostgreSQL, кэширует отчёты в Redis.
 
-У каждого сервиса собственный Go-модуль (`go.mod`), поэтому они собираются и запускаются независимо.
+У каждого сервиса собственный Go-модуль (`go.mod`). Связь между ними настроена через `go.work` и локальный `replace` в `gateway/go.mod`.
 
-## Структура репозитория
-
-    go_projects/
-    ├── gateway/
-    │   ├── go.mod
-    │   └── main.go
-    ├── ledger/
-    │   ├── go.mod
-    │   ├── main.go          # точка входа, демонстрация работы
-    │   ├── transaction.go   # структура Transaction
-    │   ├── storage.go       # хранилище транзакций и AddTransaction/ListTransactions
-    │   ├── budget.go        # Budget, SetBudget, LoadBudgets
-    │   └── budgets.json     # начальные бюджеты (читаются при запуске)
-    └── README.md
+---
 
 ## Требования
 
-- Go 1.22 или выше
+- Go 1.22+
+- Docker (для запуска PostgreSQL и Redis)
+- Утилита миграций [Goose](https://github.com/pressly/goose)
 
-## Gateway
+---
 
-Простой HTTP-сервер. Пока реализован один маршрут.
+## 1. Запуск инфраструктуры
 
-### Запуск
-
-    cd gateway
-    go run .
-
-Сервис слушает порт `8080`.
-
-### Проверка
-
-    curl -i http://localhost:8080/ping
-
-Ожидаемый ответ:
-
-    HTTP/1.1 200 OK
-    Content-Type: text/plain; charset=utf-8
-    Content-Length: 4
-
-    pong
-
-Остановить сервис — `Ctrl+C`.
-
-## Ledger
-
-Сервис для учёта транзакций и контроля бюджетов. Демонстрационная программа
-в `main.go` показывает полный сценарий работы:
-
-1. Загружает бюджеты из `budgets.json` через `LoadBudgets`.
-2. Добавляет ещё один бюджет через `SetBudget` (категория `transport`).
-3. Пытается добавить несколько транзакций:
-    - обычные — успешно,
-    - превышающую лимит — отклоняется с ошибкой `budget exceeded ...`,
-    - с нулевой суммой — отклоняется с ошибкой `amount cannot be zero`.
-4. Выводит список успешно сохранённых транзакций.
-
-### Модель данных
-
-```go
-type Transaction struct {
-    ID          int
-    Amount      float64
-    Category    string
-    Description string
-    Date        string
-}
-
-type Budget struct {
-    Category string
-    Limit    float64
-    Period   string
-}
-```
-
-### Основные функции
-
-| Функция                                     | Назначение                                                                                                                     |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `AddTransaction(tx Transaction) error`      | Добавляет транзакцию. Проверяет, что сумма положительна, и что суммарные траты по категории не превышают установленный бюджет. |
-| `ListTransactions() []Transaction`          | Возвращает копию списка сохранённых транзакций.                                                                                |
-| `SetBudget(b Budget) error`                 | Добавляет или обновляет бюджет для категории.                                                                                  |
-| `GetBudget(category string) (Budget, bool)` | Возвращает бюджет по категории.                                                                                                |
-| `LoadBudgets(r io.Reader) error`            | Читает массив бюджетов из JSON и регистрирует их через `SetBudget`.                                                            |
-
-### Формат `budgets.json`
-
-    [
-      {"category": "food", "limit": 5000, "period": "month"},
-      {"category": "entertainment", "limit": 2000, "period": "month"}
-    ]
-
-### Запуск
-
-    cd ledger
-    go run .
-
-### Ожидаемый вывод
-
-    Ledger service started
-    Budgets loaded from budgets.json
-    Budget for transport set via SetBudget
-    AddTransaction accepted: category=food amount=1500.50
-    AddTransaction accepted: category=transport amount=300.00
-    AddTransaction accepted: category=entertainment amount=75.20
-    AddTransaction rejected (budget exceeded expected): budget exceeded for category "food": limit=5000.00, would be=5500.50
-    AddTransaction rejected (zero amount expected): amount cannot be zero
-    Transactions:
-    ID=1, Amount=1500.50, Category=food, Description=Groceries, Date=2026-10-05
-    ID=2, Amount=300.00, Category=transport, Description=Taxi, Date=2026-10-05
-    ID=3, Amount=75.20, Category=entertainment, Description=Cinema, Date=2026-10-04
-
-Обратите внимание: транзакция, превышающая бюджет, **не попадает** в итоговый список.
-
-## Правила проверки бюджета
-
-При добавлении транзакции `AddTransaction`:
-
-1. Проверяет, что `Amount > 0`.
-2. Ищет бюджет для `tx.Category`. Если бюджета нет — транзакция принимается без ограничений.
-3. Если бюджет есть — суммирует все уже сохранённые транзакции этой категории
-   и сравнивает с лимитом. Если `currentSum + tx.Amount > limit`, возвращается ошибка
-   вида `budget exceeded for category "..."`, и транзакция не сохраняется.
-
-## Сборка
-
-Каждый сервис собирается отдельно, из своей папки:
-
-    cd gateway && go build ./...
-    cd ../ledger && go build ./...
-
-    ## Валидация через интерфейс Validatable
-
-В сервисе `Ledger` определён интерфейс `Validatable`:
-
-    type Validatable interface {
-        Validate() error
-    }
-
-Его реализуют структуры `Transaction` и `Budget`:
-
-- `Transaction.Validate()` проверяет, что `Amount > 0` и `Category` не пустая.
-- `Budget.Validate()` проверяет, что `Limit > 0` и `Category` не пустая.
-
-Методы `Validate()` не логируют, а только возвращают ошибку. Логирование — ответственность вызывающего кода.
-
-Функции `AddTransaction` и `SetBudget` первым делом вызывают `Validate()`, и, если проверка не прошла, возвращают ошибку и не сохраняют объект.
-
-Для демонстрации полиморфизма определена функция:
-
-    func CheckValid(v Validatable) error {
-        return v.Validate()
-    }
-
-В `main` она вызывается с объектами `Transaction` и `Budget`, корректными и некорректными — что видно в выводе программы.
-
-## API Gateway
-
-Gateway предоставляет HTTP API для работы с Ledger.
-
-| Метод | Путь                | Описание                    |
-| ----- | ------------------- | --------------------------- |
-| POST  | `/api/transactions` | Создать транзакцию          |
-| GET   | `/api/transactions` | Получить список транзакций  |
-| POST  | `/api/budgets`      | Создать или обновить бюджет |
-| GET   | `/api/budgets`      | Получить список бюджетов    |
-
-### Примеры `curl`
-
-**Создать бюджет:**
+Запустите PostgreSQL (на порту `5433`) и Redis (на порту `6379`) через Docker:
 
 ```bash
-curl -i -X POST http://localhost:8080/api/budgets \
--H "Content-Type: application/json" \
--d '{"category":"food","limit":5000}'
+docker run -d --name cashcraft-postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=cashapp \
+  -p 5433:5432 postgres:15
+
+docker run -d --name cashcraft-redis \
+  -p 6379:6379 redis:7-alpine
 ```
-
-**Создать транзакцию:**
-
-```bash
-curl -i -X POST http://localhost:8080/api/transactions \
--H "Content-Type: application/json" \
--d '{"amount":450,"category":"food","description":"lunch","date":"2025-09-10"}'
-```
-
-**Получить список транзакций:**
-
-```bash
-curl -i http://localhost:8080/api/transactions
-```
-
-При превышении бюджета возвращается `409 Conflict`:
-
-```json
-{ "error": "budget exceeded" }
-```
-
-При ошибке валидации возвращается `400 Bad Request`:
-
-```json
-{ "error": "transaction amount must be positive" }
-```
-
-## Тестирование
-
-В проекте реализованы unit-тесты для домена (`ledger`) и интеграционные тесты для HTTP-слоя (`gateway/internal/api`).
-
-Запуск всех тестов с покрытием:
-
-```bash
-go test ./gateway/... ./ledger/... -v -cover
-```
-
-Генерация HTML-отчета о покрытии:
-
-```bash
-go test ./gateway/... ./ledger/... -coverprofile=cover.out
-go tool cover -html=cover.out -o cover.html
-```
-
-Текущее покрытие тестами:
-
-Текущее покрытие тестами:
-- `gateway/internal/api` — **89.3%**
-- `ledger` — **71.2%**

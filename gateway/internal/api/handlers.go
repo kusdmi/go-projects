@@ -34,7 +34,8 @@ func CreateTransactionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := ledger.AddTransaction(tx); err != nil {
+	// Передаем указатель &tx, чтобы Ledger сохранил в него ID из базы данных (RETURNING id)
+	if err := ledger.AddTransaction(&tx); err != nil {
 		if strings.Contains(err.Error(), "budget exceeded") {
 			writeError(w, http.StatusConflict, "budget exceeded")
 			return
@@ -43,14 +44,18 @@ func CreateTransactionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	all := ledger.ListTransactions()
-	created := all[len(all)-1]
-
-	writeJSON(w, http.StatusCreated, FromDomainTransaction(created))
+	// Теперь tx содержит сгенерированный ID, возвращаем его клиенту
+	writeJSON(w, http.StatusCreated, FromDomainTransaction(tx))
 }
 
 func ListTransactionsHandler(w http.ResponseWriter, r *http.Request) {
-	txs := ledger.ListTransactions()
+	// Теперь ListTransactions возвращает ошибку
+	txs, err := ledger.ListTransactions()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list transactions")
+		return
+	}
+
 	res := make([]TransactionResponse, 0, len(txs))
 	for _, tx := range txs {
 		res = append(res, FromDomainTransaction(tx))
@@ -80,10 +85,33 @@ func CreateBudgetHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func ListBudgetsHandler(w http.ResponseWriter, r *http.Request) {
-	bs := ledger.ListBudgets()
+	// Теперь ListBudgets возвращает ошибку
+	bs, err := ledger.ListBudgets()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list budgets")
+		return
+	}
+
 	res := make([]BudgetResponse, 0, len(bs))
 	for _, b := range bs {
 		res = append(res, FromDomainBudget(b))
 	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+func GetReportSummaryHandler(w http.ResponseWriter, r *http.Request) {
+	from := r.URL.Query().Get("from")
+	to := r.URL.Query().Get("to")
+	if from == "" || to == "" {
+		writeError(w, http.StatusBadRequest, "from and to query parameters are required")
+		return
+	}
+
+	summary, err := ledger.GetReportSummary(r.Context(), from, to)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to get report summary")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, summary)
 }

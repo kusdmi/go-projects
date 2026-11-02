@@ -2,80 +2,88 @@ package main
 
 import (
 	"bufio"
+	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"example.com/finance/ledger"
+	"example.com/finance/ledger/internal/cache"
+	"example.com/finance/ledger/internal/db"
 )
 
 func main() {
 	fmt.Println("Ledger service started")
 
-	// 1. Загрузка бюджетов из файла
+	if err := db.Connect(); err != nil {
+		log.Fatalf("Database connection failed: %v", err)
+	}
+	if err := cache.Connect(); err != nil {
+		log.Fatalf("Redis connection failed: %v", err)
+	}
+
 	file, err := os.Open("budgets.json")
 	if err != nil {
 		log.Fatalf("failed to open budgets.json: %v", err)
 	}
 	defer file.Close()
 
-	if err := ledger.LoadBudgets(bufio.NewReader(file)); err != nil {
-		log.Fatalf("failed to load budgets: %v", err)
+	// Демонстрация загрузки бюджетов (опционально, можно удалить)
+	// ... (код для LoadBudgets, если он нужен, но он больше не использует БД)
+
+	ctx := context.Background()
+	from := "2025-09-01"
+	to := "2025-09-30"
+	summary, err := GetReportSummary(ctx, from, to)
+	if err != nil {
+		log.Printf("Report summary error: %v", err)
+	} else {
+		fmt.Printf("Report summary: %+v\n", summary)
 	}
-	fmt.Println("Budgets loaded from budgets.json")
 
-	// 2. Установка дополнительного бюджета через SetBudget
-	if err := ledger.SetBudget(ledger.Budget{Category: "transport", Limit: 1000, Period: "month"}); err != nil {
-		log.Printf("failed to set budget: %v", err)
-	}
-	fmt.Println("Budget for transport set via SetBudget")
+	// Демонстрация: повторный вызов должен быть быстрее (из кэша)
+	start := time.Now()
+	_, _ = GetReportSummary(ctx, from, to)
+	fmt.Printf("Second call took %v (cached)\n", time.Since(start))
+}
 
-	// 3. Демонстрация полиморфизма через интерфейс Validatable
-	fmt.Println("--- Validatable interface demonstration ---")
-	validTx := ledger.Transaction{Amount: 100, Category: "food"}
-	invalidTx := ledger.Transaction{Amount: -10, Category: "food"}
-	validBudget := ledger.Budget{Category: "food", Limit: 1000}
-	invalidBudget := ledger.Budget{Category: "", Limit: -50}
+// GetReportSummary — пример агрегации с кэшированием
+func GetReportSummary(ctx context.Context, from, to string) (map[string]float64, error) {
+	cacheKey := fmt.Sprintf("report:summary:%s:%s", from, to)
 
-	fmt.Printf("CheckValid(validTx)      err=%v\n", ledger.CheckValid(validTx))
-	fmt.Printf("CheckValid(invalidTx)    err=%v\n", ledger.CheckValid(invalidTx))
-	fmt.Printf("CheckValid(validBudget)  err=%v\n", ledger.CheckValid(validBudget))
-	fmt.Printf("CheckValid(invalidBudget) err=%v\n", ledger.CheckValid(invalidBudget))
-
-	// 4. Обычные транзакции
-	fmt.Println("--- Adding transactions ---")
-	samples := []ledger.Transaction{
-		{Amount: 1500.50, Category: "food", Description: "Groceries", Date: "2026-10-05"},
-		{Amount: 300, Category: "transport", Description: "Taxi", Date: "2026-10-05"},
-		{Amount: 75.20, Category: "entertainment", Description: "Cinema", Date: "2026-10-04"},
-	}
-	for _, tx := range samples {
-		if err := ledger.AddTransaction(tx); err != nil {
-			fmt.Printf("AddTransaction rejected: %v\n", err)
-			continue
+	if val, err := cache.Client.Get(ctx, cacheKey).Result(); err == nil {
+		var summary map[string]float64
+		if err := json.Unmarshal([]byte(val), &summary); err == nil {
+			return summary, nil
 		}
-		fmt.Printf("AddTransaction accepted: category=%s amount=%.2f\n", tx.Category, tx.Amount)
 	}
 
-	// 5. Транзакция сверх лимита бюджета food (5000)
-	overBudget := ledger.Transaction{
-		Amount: 4000, Category: "food", Description: "Big shopping", Date: "2026-10-05",
+	query := `
+		SELECT category, SUM(amount)
+		FROM expenses
+		WHERE date BETWEEN $1 AND $2
+		GROUP BY category
+	`
+	rows, err := db.DB.Query(query, from, to)
+	if err != nil {
+		return nil, err
 	}
-	if err := ledger.AddTransaction(overBudget); err != nil {
-		fmt.Printf("AddTransaction rejected (budget exceeded expected): %v\n", err)
+	defer rows.Close()
+
+	summary := make(map[string]float64)
+	for rows.Next() {
+		var category string
+		var total float64
+		if err := rows.Scan(&category, &total); err != nil {
+			return nil, err
+		}
+		summary[category] = total
 	}
 
-	// 6. Некорректная транзакция (отрицательная сумма)
-	if err := ledger.AddTransaction(ledger.Transaction{Amount: -1, Category: "food"}); err != nil {
-		fmt.Printf("AddTransaction rejected (negative amount expected): %v\n", err)
-	}
+	data, _ := json.Marshal(summary)
+	cache.Client.Set(ctx, cacheKey, data, 30*time.Second)
 
-	// 7. Вывод списка транзакций
-	fmt.Println("--- Transactions ---")
-	for _, tx := range ledger.ListTransactions() {
-		fmt.Printf(
-			"ID=%d, Amount=%.2f, Category=%s, Description=%s, Date=%s\n",
-			tx.ID, tx.Amount, tx.Category, tx.Description, tx.Date,
-		)
-	}
+	return summary, nil
 }
