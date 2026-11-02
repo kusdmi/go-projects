@@ -229,5 +229,6 @@ go tool cover -html=cover.out -o cover.html
 
 Текущее покрытие тестами:
 
-- `gateway/internal/api` — **73.3%**
+Текущее покрытие тестами:
+- `gateway/internal/api` — **89.3%**
 - `ledger` — **71.2%**
