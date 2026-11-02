@@ -31,3 +31,5 @@ tmp/
 bin/
 gateway/gateway
 ledger/ledger
+cover.out
+cover.html

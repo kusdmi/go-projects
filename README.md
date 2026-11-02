@@ -209,3 +209,25 @@ curl -i http://localhost:8080/api/transactions
 ```json
 { "error": "transaction amount must be positive" }
 ```
+
+## Тестирование
+
+В проекте реализованы unit-тесты для домена (`ledger`) и интеграционные тесты для HTTP-слоя (`gateway/internal/api`).
+
+Запуск всех тестов с покрытием:
+
+```bash
+go test ./gateway/... ./ledger/... -v -cover
+```
+
+Генерация HTML-отчета о покрытии:
+
+```bash
+go test ./gateway/... ./ledger/... -coverprofile=cover.out
+go tool cover -html=cover.out -o cover.html
+```
+
+Текущее покрытие тестами:
+
+- `gateway/internal/api` — **73.3%**
+- `ledger` — **71.2%**

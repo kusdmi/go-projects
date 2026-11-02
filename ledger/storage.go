@@ -46,3 +46,8 @@ func ListTransactions() []Transaction {
 	copy(result, transactions)
 	return result
 }
+
+func Reset() {
+	transactions = make([]Transaction, 0)
+	budgets = make(map[string]Budget)
+}

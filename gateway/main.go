@@ -8,14 +8,7 @@ import (
 )
 
 func main() {
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("POST /api/transactions", api.CreateTransactionHandler)
-	mux.HandleFunc("GET /api/transactions", api.ListTransactionsHandler)
-	mux.HandleFunc("POST /api/budgets", api.CreateBudgetHandler)
-	mux.HandleFunc("GET /api/budgets", api.ListBudgetsHandler)
-
-	handler := api.LoggingMiddleware(mux)
+	handler := api.NewRouter()
 
 	addr := ":8080"
 	log.Printf("Gateway service started on %s", addr)
